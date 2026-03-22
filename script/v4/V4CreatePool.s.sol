@@ -27,8 +27,8 @@ contract V4CreatePoolAndAddLiquidity is Script {
     IPermit2 permit2;
     IPositionManager positionManager;
 
-    IERC20 internal token0 = IERC20(vm.envAddress("TOKEN0"));
-    IERC20 internal token1 = IERC20(vm.envAddress("TOKEN1"));
+    IERC20 internal token0 = IERC20(vm.envAddress("TOKEN0")); // 基础货币，例如eth
+    IERC20 internal token1 = IERC20(vm.envAddress("TOKEN1")); // 计价货币，例如usdt
     uint256 amount0 = vm.envUint("AMOUNT0");
     uint256 amount1 = vm.envUint("AMOUNT1");
     uint256 token0Amount;
@@ -38,7 +38,7 @@ contract V4CreatePoolAndAddLiquidity is Script {
     IHooks constant hookContract = IHooks(address(0));
     uint256 initPrice = vm.envUint("INIT_PRICE"); // 实际价格，例如 100
     uint24 lpFee = 3000; // 0.3%
-    int24 tickSpacing = 60; // 根据 fee 设置的官方 tick spacing
+    int24 tickSpacing = 30; // 根据 fee 设置的官方 tick spacing
     int24 tickLower;
     int24 tickUpper;
     uint160 startingPrice;
@@ -70,20 +70,32 @@ contract V4CreatePoolAndAddLiquidity is Script {
         });
 
         // 将实际价格转换为 sqrtPriceX96
-        startingPrice = getSqrtPriceX96(initPrice);
+        startingPrice = getSqrtPriceX96FromHumanPrice(initPrice);
+        console.log("startingPrice", startingPrice);
 
         // 计算当前 tick
         int24 currentTick = TickMath.getTickAtSqrtPrice(startingPrice);
+        console.log("currentTick", currentTick);
 
         // 设置流动性范围
         tickLower = truncateTickSpacing(
-            currentTick - 750 * tickSpacing,
+            currentTick - 500 * tickSpacing,
             tickSpacing
         );
         tickUpper = truncateTickSpacing(
-            currentTick + 750 * tickSpacing,
+            currentTick + 500 * tickSpacing,
             tickSpacing
         );
+
+        console.log("token0", Currency.unwrap(currency0));
+        console.log("token1", Currency.unwrap(currency1));
+        console.log("tickLower", tickLower);
+        console.log("tickUpper", tickUpper);
+        console.log("startingPrice", startingPrice);
+        console.log("lowerPrice", TickMath.getSqrtPriceAtTick(tickLower));
+        console.log("upperPrice", TickMath.getSqrtPriceAtTick(tickUpper));
+        console.log("token0Amount", token0Amount);
+        console.log("token1Amount", token1Amount);
 
         // 精确计算 liquidity
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
@@ -93,6 +105,7 @@ contract V4CreatePoolAndAddLiquidity is Script {
             token0Amount,
             token1Amount
         );
+        console.log("liquidity", liquidity);
 
         // slippage 容忍
         uint256 amount0Max = token0Amount + 1;
@@ -145,6 +158,26 @@ contract V4CreatePoolAndAddLiquidity is Script {
     }
 
     // ---------- 辅助函数 ----------
+    function encodePriceSqrt(
+        uint256 reserve1,
+        uint256 reserve0
+    ) internal pure returns (uint160) {
+        return uint160((sqrt((reserve1 * 2 ** 192) / reserve0)));
+    }
+
+    function getSqrtPriceX96FromHumanPrice(
+        uint256 priceAperB
+    ) internal view returns (uint160 sqrtPriceX96) {
+        require(address(token0) != address(token1));
+        uint160 price;
+        if (token0 < token1) {
+            price = encodePriceSqrt(priceAperB, 1);
+        } else {
+            price = encodePriceSqrt(1, priceAperB);
+        }
+        console.log("price", price);
+        return price;
+    }
 
     function getSqrtPriceX96(uint256 price) internal pure returns (uint160) {
         // price 是实际价格，例如 100
